@@ -66,7 +66,16 @@ jobs:
 #          - runs-on: macos-13
 #            python: '3.11'
 #            triplet: x64-osx-mixed
-          - runs-on: macos-latest
+          - runs-on: macos-12
+            python: '3.9'
+            triplet: x64-osx-mixed
+          - runs-on: macos-12
+            python: '3.10'
+            triplet: x64-osx-mixed
+          - runs-on: macos-12
+            python: '3.11'
+            triplet: x64-osx-mixed
+          - runs-on: macos-12
             python: '3.12'
             triplet: x64-osx-mixed
 
