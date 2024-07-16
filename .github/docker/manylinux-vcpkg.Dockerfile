@@ -8,7 +8,8 @@ RUN echo "$PWD"
 
 RUN git clone https://github.com/Microsoft/vcpkg.git /opt/vcpkg
 RUN cd /opt/vcpkg
-RUN git reset --hard 815093
+RUN git pull
+RUN git reset --hard 8150939b6
 RUN cd /
 
 ENV VCPKG_INSTALLATION_ROOT="/opt/vcpkg"
