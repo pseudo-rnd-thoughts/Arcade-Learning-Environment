@@ -3,7 +3,7 @@
   "name": "arcade-learning-environment",
   "version": "0.9.1",
   "dependencies": [
-    "zlib-ng"
+    "zlib"
   ],
   "features": {
     "sdl": {
