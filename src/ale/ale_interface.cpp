@@ -263,7 +263,7 @@ reward_t ALEInterface::act(
   Action a_action,
   float a_paddle_strength = 1.0,
   Action b_action = NOOP,
-  float b_paddle_strength = 1.0,
+  float b_paddle_strength = 1.0
 ) {
   return environment->act(a_action, b_action, a_paddle_strength, b_paddle_strength);
 }
