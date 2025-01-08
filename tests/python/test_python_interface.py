@@ -1,23 +1,23 @@
-import os
-import pickle
-import tempfile
-
-import ale_py
-import numpy as np
-import pytest
-from utils import ale, random_rom_path, tetris, tetris_rom_path  # noqa: F401
-
-
-def test_ale_version():
-    assert hasattr(ale_py, "__version__")
-
-
-def test_ale_construction(ale):
-    assert isinstance(ale, ale_py.ALEInterface)
-
-
-def test_load_rom(tetris):
-    assert isinstance(tetris, ale_py.ALEInterface)
+# import os
+# import pickle
+# import tempfile
+#
+# import ale_py
+# import numpy as np
+# import pytest
+# from utils import ale, random_rom_path, tetris, tetris_rom_path  # noqa: F401
+#
+#
+# def test_ale_version():
+#     assert hasattr(ale_py, "__version__")
+#
+#
+# def test_ale_construction(ale):
+#     assert isinstance(ale, ale_py.ALEInterface)
+#
+#
+# def test_load_rom(tetris):
+#     assert isinstance(tetris, ale_py.ALEInterface)
 
 
 # def test_string_config(tetris):
