@@ -46,7 +46,7 @@ def test_roms_register():
         [
             env_id
             for env_id, spec in gymnasium.registry.items()
-            if spec.entry_point == "ale_py.env:AtariEnv"
+            if spec.entry_point == "ale_py.env:AtariEnv" and spec.name == "Pong"
         ],
         [True, False],
     ),

@@ -181,12 +181,11 @@ class AtariEnv(gymnasium.Env, utils.EzPickle):
         self.continuous = continuous
         self.continuous_action_threshold = continuous_action_threshold
         if continuous:
-            # Actions are radius, theta, and fire, where first two are the
-            # parameters of polar coordinates.
+            # Actions are radius, theta, and fire, where first two are the parameters of polar coordinates.
             self.action_space = spaces.Box(
                 np.array([0.0, -np.pi, 0.0]).astype(np.float32),
                 np.array([1.0, np.pi, 1.0]).astype(np.float32),
-            )  # radius, theta, fire. First two are polar coordinates.
+            )
         else:
             self.action_space = spaces.Discrete(len(self._action_set))
 
