@@ -15,6 +15,7 @@ endif()
 
 # Set cmake module path
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
+set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-osx/share ${CMAKE_PREFIX_PATH})
 
 # Overlay VCPKG custom triplets
 if(NOT DEFINED VCPKG_OVERLAY_TRIPLETS)
@@ -55,6 +56,10 @@ endif()
 
 include(ParseVersion)
 parse_version("version.txt" PREFIX ALE)
+
+message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
+message(STATUS "CMAKE_MODULE_PATH=${CMAKE_MODULE_PATH}")
+message(STATUS "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
 
 project(ale VERSION ${ALE_DEFAULT_VERSION}
             DESCRIPTION "The Arcade Learning Environment (ALE) - a platform for AI research."
