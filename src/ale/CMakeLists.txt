@@ -21,12 +21,10 @@ add_library(ale OBJECT)
 # Dependencies
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
-find_package(glog REQUIRED)
 target_link_libraries(ale
   PRIVATE
     ZLIB::ZLIB
-    Threads::Threads
-    glog::glog)
+    Threads::Threads)
 
 if(SDL_SUPPORT)
   option(SDL_DYNLOAD "Dynamically load SDL" OFF)
@@ -47,14 +45,6 @@ if(SDL_SUPPORT)
   target_include_directories(ale PRIVATE ${SDL2_INCLUDE_DIRS})
 endif()
 
-target_include_directories(ale PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external/concurrentqueue/
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../external/ThreadPool/
-)
-
-find_package(OpenCV CONFIG REQUIRED)
-target_link_libraries(ale PRIVATE opencv_ml opencv_dnn opencv_core opencv_flann)
-
 get_target_property(INCLUDE_DIRS ale INCLUDE_DIRECTORIES)
 message(STATUS "Include directories for ale: ${INCLUDE_DIRS}")
 
@@ -65,7 +55,6 @@ add_subdirectory(common)
 add_subdirectory(emucore)
 add_subdirectory(environment)
 add_subdirectory(games)
-add_subdirectory(vector)
 
 # C++ Library
 if (BUILD_CPP_LIB OR BUILD_PYTHON_LIB)
@@ -77,6 +66,22 @@ endif()
 # Python Library
 if (BUILD_PYTHON_LIB)
   add_subdirectory(python)
+endif()
+
+# Vector library
+if (BUILD_VECTOR_LIB)
+  find_package(glog REQUIRED)
+  target_link_libraries(ale PRIVATE glog::glog)
+
+  target_include_directories(ale PUBLIC
+          ${PROJECT_SOURCE_DIR}/external/concurrentqueue/
+          ${PROJECT_SOURCE_DIR}/external/ThreadPool/
+  )
+
+  find_package(OpenCV CONFIG REQUIRED)
+  target_link_libraries(ale PRIVATE opencv_core)
+
+  add_subdirectory(vector)
 endif()
 
 # Install cpp-lib and CMake config & pkg-config

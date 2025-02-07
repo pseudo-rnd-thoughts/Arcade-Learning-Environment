@@ -13,9 +13,18 @@ if(SDL_SUPPORT)
   list(APPEND VCPKG_MANIFEST_FEATURES "sdl")
 endif()
 
+option(BUILD_VECTOR_LIB "Build Vector Interface" OFF)
+if (BUILD_VECTOR_LIB)
+  list(APPEND VCPKG_MANIFEST_FEATURES "vector")
+endif()
+option(BUILD_VECTOR_XLA "Build Vector XLA Interface" OFF)
+if (BUILD_VECTOR_XLA)
+  list(APPEND VCPKG_MANIFEST_FEATURES "cuda")
+endif()
+
 # Set cmake module path
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
-set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-osx/share ${CMAKE_PREFIX_PATH})
+set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/${VCPKG_HOST_TRIPLET}/share ${CMAKE_PREFIX_PATH})
 
 # Overlay VCPKG custom triplets
 if(NOT DEFINED VCPKG_OVERLAY_TRIPLETS)

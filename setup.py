@@ -46,6 +46,8 @@ class CMakeBuild(build_ext):
             "-DSDL_DYNLOAD=ON",
             "-DBUILD_CPP_LIB=OFF",
             "-DBUILD_PYTHON_LIB=ON",
+            "-DBUILD_VECTOR_LIB=ON",
+            "-DBUILD_VECTOR_XLA=ON"
         ]
         build_args = []
 

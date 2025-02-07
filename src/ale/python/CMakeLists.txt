@@ -1,17 +1,19 @@
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+message(STATUS "Python3_EXECUTABLE=${Python3_EXECUTABLE}")
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+# It is necessary to have a python3 executable for this to work.
 
 set(PYBIND11_FINDPYTHON ON)
-set(PYBIND11_VER 2.13.1)
 find_package(pybind11 ${PYBIND11_VER} REQUIRED)
+if(NOT pybind11_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11
+        GIT_TAG v${PYBIND11_VER})
+    FetchContent_MakeAvailable(pybind11)
+endif()
 
-#if(NOT pybind11_FOUND)
-#    include(FetchContent)
-#    FetchContent_Declare(
-#        pybind11
-#        GIT_REPOSITORY https://github.com/pybind/pybind11
-#        GIT_TAG v${PYBIND11_VER})
-#    FetchContent_MakeAvailable(pybind11)
-#endif()
+#add_subdirectory(pybind11_ROOT_DIR)  # necessary for vector to import "<pybind11/functional.h>"
 
 add_library(ale-py MODULE ale_python_interface.cpp)
 # Depend on the ALE and pybind11 module
