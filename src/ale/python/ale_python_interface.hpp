@@ -80,6 +80,14 @@ class ALEPythonInterface : public ALEInterface {
         inline uint32_t getRAMSize() { return ALEInterface::getRAM().size(); }
         const py::array_t<uint8_t, py::array::c_style> getRAM();
         void getRAM(py::array_t<uint8_t, py::array::c_style>& buffer);
+
+        inline std::vector<ale::Action> convert(std::vector<uint32_t> a){
+          std::vector<ale::Action> v(a.size());
+          for (size_t i = 0; i < a.size(); i++) {
+            v[i] = (ale::Action)(a[i]);
+          }
+          return v;
+        }
 };
 
 } // namespace ale
@@ -160,11 +168,15 @@ PYBIND11_MODULE(_ale_py, m) {
             py::arg("action"), py::arg("paddle_strength") = 1.0)
         .def("act", &ale::ALEInterface::act,
             py::arg("action"), py::arg("paddle_strength") = 1.0)
+        .def("act", [](ale::ALEPythonInterface & ale, std::vector<ale::Action> a){ return ale.act(a); })
+        .def("act", [](ale::ALEPythonInterface & ale, std::vector<uint32_t> a){ return ale.act(convert(a)); })
         .def("game_over", &ale::ALEPythonInterface::game_over,
             py::kw_only(), py::arg("with_truncation") = py::bool_(true))
         .def("game_truncated", &ale::ALEPythonInterface::game_truncated)
         .def("reset_game", &ale::ALEPythonInterface::reset_game)
+        .def("numPlayersActive", &ale::ALEPythonInterface::numPlayersActive)
         .def("getAvailableModes", &ale::ALEPythonInterface::getAvailableModes)
+        .def("getAvailableModes", [](ale::ALEPythonInterface & ale){ return ale.getAvailableModes(); })
         .def("setMode", &ale::ALEPythonInterface::setMode)
         .def("getAvailableDifficulties", &ale::ALEPythonInterface::getAvailableDifficulties)
         .def("setDifficulty", &ale::ALEPythonInterface::setDifficulty)
@@ -172,6 +184,7 @@ PYBIND11_MODULE(_ale_py, m) {
         .def("getMinimalActionSet", &ale::ALEPythonInterface::getMinimalActionSet)
         .def("getFrameNumber", &ale::ALEPythonInterface::getFrameNumber)
         .def("lives", &ale::ALEPythonInterface::lives)
+        .def("allLives", &ale::ALEPythonInterface::allLives)
         .def("getEpisodeFrameNumber", &ale::ALEPythonInterface::getEpisodeFrameNumber)
         .def("getScreen", static_cast<void (ale::ALEPythonInterface::*)(py::array_t<ale::pixel_t, py::array::c_style> &)>(&ale::ALEPythonInterface::getScreen))
         .def("getScreen", static_cast<py::array_t<ale::pixel_t, py::array::c_style>(ale::ALEPythonInterface::*)()>(&ale::ALEPythonInterface::getScreen))
