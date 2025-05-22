@@ -1,196 +1,169 @@
-import distutils.dir_util
+"""Setup file for ALE."""
+
 import os
-import sys
 import platform
-import multiprocessing
-import shlex
 import re
+import shutil
+import subprocess
+import sys
 
-from distutils.command.clean import clean as _clean
-from setuptools import setup, Extension, Distribution as _distribution
-from setuptools.command.build_ext import _build_ext
-from shutil import rmtree
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
-system = platform.system()
-here = os.path.abspath(os.path.dirname(__file__))
-
-
-class Distribution(_distribution):
-    global_options = _distribution.global_options
-
-    global_options += [("cmake-options=", None, "Additional semicolon-separated cmake setup options list")]
-
-    if system == "Windows":
-        global_options += [("vcpkg-root=", None, "Path to vcpkg root. For Windows only")]
-
-    def __init__(self, attrs=None):
-        self.vcpkg_root = None
-        self.cmake_options = None
-        super().__init__(attrs)
+current_working_file = os.path.abspath(os.path.dirname(__file__))
 
 
 class CMakeExtension(Extension):
-    def __init__(self, name):
+    def __init__(self, name, sourcedir=""):
         Extension.__init__(self, name, sources=[])
+        self.sourcedir = os.path.abspath(sourcedir)
 
 
-class BuildALEPythonInterface(_build_ext):
-    def run(self):
-        for ext in self.extensions:
-            self.build_extension(ext)
-
-        super().run()
+class CMakeBuild(build_ext):
+    PLAT_TO_CMAKE = {
+        "win32": "Win32",
+        "win-amd64": "x64",
+        "win-arm32": "ARM",
+        "win-arm64": "ARM64",
+    }
 
     def build_extension(self, ext):
-        distutils.dir_util.mkpath(self.build_temp)
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
-        libdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-        distutils.dir_util.mkpath(libdir)
+        # required for rpath detection of libraries
+        if not extdir.endswith(os.path.sep):
+            extdir += os.path.sep
 
         config = "Debug" if self.debug else "Release"
 
+        # CMake lets you override the generator - we need to check this.
+        # Can be set with Conda-Build, for example.
+        cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
+
         cmake_args = [
-            "-DCMAKE_BUILD_TYPE={}".format(config),
-            "-DUSE_SDL=OFF",
+            f"-DCMAKE_BUILD_TYPE={config}",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
+            "-DSDL_SUPPORT=ON",
+            "-DSDL_DYNLOAD=ON",
             "-DBUILD_CPP_LIB=OFF",
-            "-DBUILD_PYTHON=ON",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}".format(config.upper(), libdir),
-            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_{}={}".format(config.upper(), libdir),
-            "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY_{}={}".format(config.upper(), libdir),
-            "-DPYTHON_EXECUTABLE={}".format(sys.executable),
+            "-DBUILD_PYTHON_LIB=ON",
+            "-DBUILD_VECTOR_LIB=ON",
         ]
-        build_args = [
-            "--config",
-            config,
-            "--parallel",
-            str(multiprocessing.cpu_count()),
+        # We can only support XLA on platforms with JAX support (e.g., 3.10+ and Windows/Linux)
+        if sys.version_info >= (3, 10) and platform.system() in {
+            "Windows",
+            "Linux",
+        }:
+            cmake_args.append("-DBUILD_VECTOR_XLA_LIB=ON")
+        build_args = []
+
+        if self.compiler.compiler_type != "msvc":
+            # Using Ninja-build since it a) is available as a wheel and b)
+            # multithreads automatically. MSVC would require all variables be
+            # exported for Ninja to pick it up, which is a little tricky to do.
+            # Users can override the generator with CMAKE_GENERATOR in CMake
+            # 3.15+.
+            if not cmake_generator or cmake_generator == "Ninja":
+                try:
+                    import ninja  # noqa: F401
+
+                    ninja_executable_path = os.path.join(ninja.BIN_DIR, "ninja")
+                    cmake_args += [
+                        "-GNinja",
+                        f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja_executable_path}",
+                    ]
+                except ImportError:
+                    if shutil.which("ninja") is not None:
+                        cmake_args += [
+                            "-GNinja",
+                        ]
+
+        else:
+            # Single config generators are handled "normally"
+            single_config = any(x in cmake_generator for x in {"NMake", "Ninja"})
+
+            # CMake allows an arch-in-generator style for backward compatibility
+            contains_arch = any(x in cmake_generator for x in {"ARM", "Win64"})
+
+            # Specify the arch if using MSVC generator, but only if it doesn't
+            # contain a backward-compatibility arch spec already in the
+            # generator name.
+            if not single_config and not contains_arch:
+                cmake_args += ["-A", self.PLAT_TO_CMAKE[self.plat_name]]
+
+            # Multi-config generators have a different way to specify configs
+            if not single_config:
+                cmake_args += [
+                    f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{config.upper()}={extdir}"
+                ]
+                build_args += ["--config", config]
+
+        if sys.platform.startswith("darwin"):
+            # Cross-compile support for macOS - respect ARCHFLAGS if set
+            archs = re.findall(r"-arch (\S+)", os.environ.get("ARCHFLAGS", ""))
+            if archs:
+                cmake_args += ["-DCMAKE_OSX_ARCHITECTURES={}".format(";".join(archs))]
+
+        # Set CMAKE_BUILD_PARALLEL_LEVEL to control the parallel build level
+        # across all generators.
+        if "CMAKE_BUILD_PARALLEL_LEVEL" not in os.environ:
+            # self.parallel is a Python 3 only way to set parallel jobs by hand
+            # using -j in the build_ext call, not supported by pip or PyPA-build.
+            if hasattr(self, "parallel") and self.parallel:
+                build_args += [f"-j{self.parallel}"]
+
+        build_temp = os.path.join(self.build_temp, ext.name)
+        if not os.path.exists(build_temp):
+            os.makedirs(build_temp)
+
+        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp)
+        subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_temp)
+
+
+def parse_version(version_file):
+    """Parse version from `version_file`.
+
+    If we're running on CI, i.e., CIBUILDWHEEL is set, then we'll parse
+    the version from `GITHUB_REF` using the official semver regex.
+
+    If we're not running in CI we'll append the current git SHA to the
+    version identifier.
+
+    raises AssertionError: If `${GITHUB_REF#/v/*/}` doesn't start with
+        the version specified in `version_file`.
+    """
+    semver_regex = r"(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?"
+    semver_prog = re.compile(semver_regex)
+
+    with open(version_file) as fp:
+        version = fp.read().strip()
+        assert semver_prog.match(version) is not None
+
+    return version
+
+
+def get_setup_requires():
+    """Determine extra dependencies necessary for build"""
+    setup_requires = []
+    if shutil.which("cmake") is None:
+        setup_requires += ["cmake>=3.22"]
+    if shutil.which("ninja") is None:
+        setup_requires += [
+            "ninja; sys_platform != 'win32' and platform_machine != 'arm64'"
         ]
-
-        if self.distribution.cmake_options is not None:
-            cmake_args += shlex.split(self.distribution.cmake_args)
-        cmake_args += shlex.split(os.environ.get("ALE_PY_CMAKE_ARGS", ""))
-
-        if system == "Windows":
-            platform = "x64" if sys.maxsize > 2 ** 32 else "Win32"
-            cmake_args += ["-A", platform]
-
-            if self.distribution.vcpkg_root is not None:
-                abs_vcpkg_path = os.path.abspath(self.distribution.vcpkg_root)
-                vcpkg_toolchain = os.path.join(
-                    abs_vcpkg_path, "scripts", "buildsystems", "vcpkg.cmake"
-                )
-                cmake_args += ["-DCMAKE_TOOLCHAIN_FILE=" + vcpkg_toolchain]
-
-        os.chdir(self.build_temp)
-        self.spawn(["cmake", here] + cmake_args)
-        if not self.dry_run:
-            self.spawn(["cmake", "--build", "."] + build_args)
-        os.chdir(here)
+    return setup_requires
 
 
-class Clean(_clean):
-    """Hook to clean up after building the Python package."""
-
-    def run(self):
-        rmtree(os.path.join(here, "dist"), ignore_errors=True)
-        rmtree(os.path.join(here, "build"), ignore_errors=True)
-        rmtree(os.path.join(here, "ale_py.egg-info"), ignore_errors=True)
-        super().run()
-
-
-def _read(filename):
-    """Reads an entire file into a string."""
-    with open(os.path.join(os.path.dirname(__file__), filename)) as f:
-        return f.read()
-
-
-def _is_valid_semver(version):
-    """Checks if `version` conforms to semver rules."""
-    regex = r"^((([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)$"
-    return re.match(regex, version)
-
-
-def _parse_version(filename):
-    """
-    Parse VERSION from `CMakeLists.txt`
-
-    args:
-        filename: should point to the projects CMakeLists.txt
-    returns:
-        version:
-            1) Running locally version will be of the form VERSION.dev
-            2) Running in CI with a version tag will be of the form TAGGED_VERSION
-    raises:
-        RuntimeError:
-            1) Unable to find ALEVERSION in `filename`
-        AssertionError:
-            1) Running in CI and tagged version doesn't match parsed version
-            2) Tagged version or parsed version doesn't conform to semver rules
-    """
-    # Parse version from file
-    contents = _read(filename)
-    version_match = re.search(r"ale.*VERSION\s(\d+[^\n]*)", contents, re.M | re.S)
-    if not version_match:
-        raise RuntimeError("Unable to find VERSION in {}".format(filename))
-
-    version = version_match.group(1)
-    version_suffix = ".dev0"
-    assert _is_valid_semver(version), "ALEVERSION {} must conform to semver.".format(
-        version
+if __name__ == "__main__":
+    # Allow for running `pip wheel` from other directories
+    current_working_file and os.chdir(current_working_file)
+    # Most config options are in `setup.cfg`. These are the
+    # only dynamic options we need at build time.
+    setup(
+        name="ale-py",
+        version=parse_version("version.txt"),
+        setup_requires=get_setup_requires(),
+        ext_modules=[CMakeExtension("ale_py._ale_py")],
+        cmdclass={"build_ext": CMakeBuild},
     )
-
-    # If the git ref is a tag verify the tag and don't use a suffix
-    ref = "GITHUB_REF"
-    tag_regex = r"refs\/tags\/v(.*)$"
-    if os.environ.get(ref, False) and re.match(tag_regex, os.environ.get(ref)):
-        version_match = re.search(tag_regex, os.environ.get(ref))
-        version_tag = version_match.group(1)
-        assert _is_valid_semver(
-            version_tag
-        ), "Tag is invalid semver. {} must conform to semver.".format(version_tag)
-        assert (
-            version_tag == version
-        ), "Tagged version must match VERSION but got:\n\tVERSION: {}\n\tTAG: {}".format(
-            version, tagged_version
-        )
-        version_suffix = ""
-
-    return version + version_suffix
-
-
-setup(
-    name="ale-py",
-    version=_parse_version("CMakeLists.txt"),
-    description="The Arcade Learning Environment (ALE) - a platform for AI research.",
-    long_description=_read("README.md"),
-    long_description_content_type="text/markdown",
-    keywords=["reinforcement-learning", "arcade-learning-environment", "atari"],
-    url="https://github.com/mgbellemare/Arcade-Learning-Environment",
-    author="Arcade Learning Environment Authors",
-    license="GPLv2",
-    python_requires=">=3.5",
-    classifiers=[
-        # Development Status
-        "Development Status :: 5 - Production/Stable",
-        # Audience
-        "Intended Audience :: Science/Research",
-        # License
-        "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
-        # Language Support
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.5",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        # Topics
-        "Topic :: Scientific/Engineering",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    ],
-    zip_safe=False,
-    include_package_data=True,
-    distclass=Distribution,
-    ext_modules=[CMakeExtension("ale-py")],
-    cmdclass={"build_ext": BuildALEPythonInterface, "clean": Clean},
-    install_requires=["numpy"],
-    test_requires=["pytest"],
-)
