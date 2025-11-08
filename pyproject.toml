@@ -63,7 +63,6 @@ homepage = "https://github.com/Farama-Foundation/Arcade-Learning-Environment"
 documentation = "https://ale.farama.org"
 changelog = "https://github.com/Farama-Foundation/Arcade-Learning-Environment/blob/master/CHANGELOG.md"
 
-
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --ignore vcpkg --ignore build"
@@ -82,6 +81,18 @@ cmake.build-type = "Release"
 metadata.version.provider = "scikit_build_core.metadata.regex"
 metadata.version.input = "version.txt"
 metadata.version.regex = "(?P<value>.+)"
+
+# Enable XLA on Windows and Linux
+[[tool.scikit-build.overrides]]
+if.platform-system = "^(win32|linux)"
+cmake.args = [
+    "-DSDL_SUPPORT=ON",
+    "-DSDL_DYNLOAD=ON",
+    "-DBUILD_CPP_LIB=OFF",
+    "-DBUILD_PYTHON_LIB=ON",
+    "-DBUILD_VECTOR_LIB=ON",
+    "-DBUILD_VECTOR_XLA_LIB=ON"  # add vector-xla-lib="ON"
+]
 
 [tool.cibuildwheel]
 # Skip 32-bit wheels, PyPy & musllinux
@@ -107,14 +118,14 @@ environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "arm64-osx-mi
 # Windows x64 (with XLA support)
 [[tool.cibuildwheel.overrides]]
 select = "*-win_amd64"
-environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-windows", VCPKG_FEATURE_FLAGS = "-compilertracking", SKBUILD_CMAKE_ARGS = "-DBUILD_VECTOR_XLA_LIB=ON" }
+environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-windows", VCPKG_FEATURE_FLAGS = "-compilertracking" }
 
 # Linux x86-64 (with XLA support)
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux_x86_64"
-environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-linux-mixed", VCPKG_FEATURE_FLAGS = "-compilertracking", SKBUILD_CMAKE_ARGS = "-DBUILD_VECTOR_XLA_LIB=ON" }
+environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-linux-mixed", VCPKG_FEATURE_FLAGS = "-compilertracking" }
 
 # Linux ARM64 (with XLA support)
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux_aarch64"
-environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "arm64-linux-mixed", VCPKG_FEATURE_FLAGS = "-compilertracking", SKBUILD_CMAKE_ARGS = "-DBUILD_VECTOR_XLA_LIB=ON" }
+environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "arm64-linux-mixed", VCPKG_FEATURE_FLAGS = "-compilertracking" }
