@@ -37,11 +37,28 @@ endif()
 
 target_link_libraries(_ale_py PUBLIC ale ale-lib)
 
-# Copy over the Python source files
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
-     FILES_MATCHING
-        PATTERN "**/*.py")
+# Install the compiled module
+install(TARGETS _ale_py LIBRARY DESTINATION ale_py)
+
+# Install Python source files
+install(FILES
+    __init__.py
+    env.py
+    registration.py
+    vector_env.py
+    py.typed
+    DESTINATION ale_py)
+
+# Install stub files if they exist
+install(FILES
+    __init__.pyi
+    DESTINATION ale_py
+    OPTIONAL)
+
+# Install roms directory
+install(DIRECTORY roms/
+    DESTINATION ale_py/roms
+    FILES_MATCHING PATTERN "*")
 
 # If we're dynamically loading SDL with Python we'll be building a wheel
 # so we should prepare SDL for distribution. Add rpath and copy over
@@ -65,4 +82,6 @@ if (SDL_SUPPORT AND SDL_DYNLOAD)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:SDL2::SDL2>
             $<TARGET_FILE_DIR:_ale_py>)
+    # Install SDL2 library alongside the module
+    install(FILES $<TARGET_FILE:SDL2::SDL2> DESTINATION ale_py)
 endif()

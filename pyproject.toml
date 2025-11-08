@@ -78,9 +78,10 @@ cmake.args = [
     "-DBUILD_PYTHON_LIB=ON",
     "-DBUILD_VECTOR_LIB=ON"
 ]
-cmake.define = {}
 cmake.build-type = "Release"
-wheel.packages = ["src/ale/python"]
+metadata.version.provider = "scikit_build_core.metadata.regex"
+metadata.version.input = "version.txt"
+metadata.version.regex = "(?P<value>.+)"
 
 [tool.cibuildwheel]
 # Skip 32-bit wheels, PyPy & musllinux
