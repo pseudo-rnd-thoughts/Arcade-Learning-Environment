@@ -13,19 +13,20 @@ if(NOT pybind11_FOUND)
     FetchContent_MakeAvailable(pybind11)
 endif()
 
-# XLA Integration setup
+# Use pybind11_add_module for proper scikit-build-core integration
+pybind11_add_module(_ale_py MODULE ale_python_interface.cpp)
 if (BUILD_VECTOR_LIB AND BUILD_VECTOR_XLA_LIB)
+    # XLA Integration setup
+    message(STATUS "Python Executable: '${Python_EXECUTABLE}'")
+    message(STATUS "Python_SITELIB=${Python_SITELIB}, Python_SITEARCH=${Python_SITEARCH}")
     execute_process(
         COMMAND "${Python_EXECUTABLE}" "-c"
         "import sys; sys.path.append(r'${Python_SITELIB}'); sys.path.append(r'${Python_SITEARCH}'); from jax import ffi; print(ffi.include_dir())"
         OUTPUT_STRIP_TRAILING_WHITESPACE
         OUTPUT_VARIABLE XLA_DIR
     )
-endif()
+    message(STATUS "XLA include directory: '${XLA_DIR}'")
 
-# Use pybind11_add_module for proper scikit-build-core integration
-pybind11_add_module(_ale_py MODULE ale_python_interface.cpp)
-if (BUILD_VECTOR_LIB AND BUILD_VECTOR_XLA_LIB)
     target_sources(_ale_py PRIVATE ale_vector_python_interface.cpp ale_vector_xla_interface.cpp)
     target_include_directories(_ale_py PUBLIC ${XLA_DIR})
     target_compile_definitions(_ale_py PRIVATE BUILD_VECTOR_LIB BUILD_VECTOR_XLA_LIB)

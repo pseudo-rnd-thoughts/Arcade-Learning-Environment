@@ -84,25 +84,14 @@ metadata.version.regex = "(?P<value>.+)"
 
 # Enable XLA on Windows and Linux
 [[tool.scikit-build.overrides]]
-if.platform-system = "win32"
+if.platform-system = "^(win32|linux)"
 cmake.args = [
     "-DSDL_SUPPORT=ON",
     "-DSDL_DYNLOAD=ON",
     "-DBUILD_CPP_LIB=OFF",
     "-DBUILD_PYTHON_LIB=ON",
     "-DBUILD_VECTOR_LIB=ON",
-    "-DBUILD_VECTOR_XLA_LIB=ON"
-]
-
-[[tool.scikit-build.overrides]]
-if.platform-system = "linux"
-cmake.args = [
-    "-DSDL_SUPPORT=ON",
-    "-DSDL_DYNLOAD=ON",
-    "-DBUILD_CPP_LIB=OFF",
-    "-DBUILD_PYTHON_LIB=ON",
-    "-DBUILD_VECTOR_LIB=ON",
-    "-DBUILD_VECTOR_XLA_LIB=ON"
+    "-DBUILD_VECTOR_XLA_LIB=ON"  # add vector-xla-lib="ON"
 ]
 
 [tool.cibuildwheel]
