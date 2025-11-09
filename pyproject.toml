@@ -102,9 +102,6 @@ build-frontend = "build"
 manylinux-x86_64-image = "manylinux-x86_64-vcpkg:latest"
 manylinux-aarch64-image = "manylinux-aarch64-vcpkg:latest"
 
-[tool.cibuildwheel.linux]
-environment-pass = ["GITHUB_REF"]
-
 # macOS arm64
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_arm64"
@@ -113,7 +110,7 @@ environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "arm64-osx-mi
 # Windows x64 (with XLA support)
 [[tool.cibuildwheel.overrides]]
 select = "*-win_amd64"
-environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-windows", VCPKG_FEATURE_FLAGS = "-compilertracking" }
+environment = { PIP_ONLY_BINARY = "numpy", VCPKG_DEFAULT_TRIPLET = "x64-windows-mixed", VCPKG_FEATURE_FLAGS = "-compilertracking" }
 
 # Linux x86-64 (with XLA support)
 [[tool.cibuildwheel.overrides]]
