@@ -96,7 +96,7 @@ cmake.args = [
 
 [tool.cibuildwheel]
 # Skip 32-bit wheels, PyPy & musllinux
-skip = ["*-win32", "*i686", "pp*", "*-musllinux*"]
+skip = ["*-win32", "*i686", "*-musllinux*"]
 
 build-frontend = "build"
 manylinux-x86_64-image = "manylinux-x86_64-vcpkg:latest"
