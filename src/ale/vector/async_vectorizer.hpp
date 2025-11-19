@@ -45,9 +45,7 @@ namespace ale::vector {
             is_sync_(batch_size_ == num_envs_),
             autoreset_mode_(autoreset_mode),
             stop_(false),
-            action_queue_(new ActionQueue(num_envs_)),
-            state_buffer_(new StateBuffer(batch_size_, num_envs_)),
-            final_obs_storage_(num_envs_) {
+            action_queue_(new ActionQueue(num_envs_)) {
 
             // Create environments
             envs_.resize(num_envs_);
@@ -55,6 +53,11 @@ namespace ale::vector {
                 envs_[i] = env_factory(i);
             }
             stacked_obs_size_ = envs_[0]->get_stacked_obs_size();
+
+            // Create StateBuffer with observation size
+            state_buffer_ = std::unique_ptr<StateBuffer>(
+                new StateBuffer(batch_size_, num_envs_, stacked_obs_size_)
+            );
 
             // Setup worker threads
             const std::size_t processor_count = std::thread::hardware_concurrency();
@@ -143,11 +146,10 @@ namespace ale::vector {
          * Receive timesteps from the environments
          * This is the asynchronous version that waits for results after send()
          *
-         * @return Vector of timesteps from the environments
+         * @return BatchData containing timesteps from the environments
          */
-        const std::vector<Timestep> recv() {
-            std::vector<Timestep> timesteps = state_buffer_->collect();
-            return timesteps;
+        BatchData recv() {
+            return state_buffer_->collect();
         }
 
         /**
@@ -155,9 +157,9 @@ namespace ale::vector {
          * This is a convenience method that combines send() and recv()
          *
          * @param actions Vector of actions for the environments
-         * @return Vector of timesteps from the environments
+         * @return BatchData containing timesteps from the environments
          */
-        const std::vector<Timestep> step(const std::vector<EnvironmentAction>& actions) {
+        BatchData step(const std::vector<EnvironmentAction>& actions) {
             send(actions);
             return recv();
         }
@@ -189,10 +191,8 @@ namespace ale::vector {
         std::atomic<bool> stop_;                          // Signal to stop worker threads
         std::vector<std::thread> workers_;                // Worker threads
         std::unique_ptr<ActionQueue> action_queue_;       // Queue for actions
-        std::unique_ptr<StateBuffer> state_buffer_;       // Queue for observations
+        std::unique_ptr<StateBuffer> state_buffer_;       // Buffer for observations
         std::vector<std::unique_ptr<PreprocessedAtariEnv>> envs_; // Environment instances
-
-        mutable std::vector<std::vector<uint8_t>> final_obs_storage_;  // For same-step autoreset
 
         /**
          * Worker thread function that processes environment steps
@@ -206,45 +206,115 @@ namespace ale::vector {
                     }
 
                     const int env_id = action.env_id;
+
+                    // Determine slot index for writing
+                    std::size_t slot_idx;
+                    if (is_sync_) {
+                        // In ordered mode, use env_id as slot
+                        slot_idx = env_id;
+                    } else {
+                        // In unordered mode, allocate next available slot
+                        slot_idx = state_buffer_->allocate_slot();
+                    }
+
+                    // Get observation buffer pointer
+                    uint8_t* obs_buffer = state_buffer_->get_observation_buffer(slot_idx);
+
                     if (autoreset_mode_ == AutoresetMode::NextStep) {
+                        // Step or reset the environment
                         if (action.force_reset || envs_[env_id]->is_episode_over()) {
                             envs_[env_id]->reset();
                         } else {
                             envs_[env_id]->step();
                         }
 
-                        // Get timestep and write to state buffer
-                        Timestep timestep = envs_[env_id]->get_timestep();
-                        timestep.final_observation = nullptr;  // Not used in NextStep mode
-                        state_buffer_->write(timestep);
+                        // Write observation directly to buffer
+                        envs_[env_id]->write_observation_to(obs_buffer);
+
+                        // Write metadata
+                        state_buffer_->write_metadata(
+                            slot_idx,
+                            env_id,
+                            envs_[env_id]->get_reward(),
+                            envs_[env_id]->is_terminated(),
+                            envs_[env_id]->is_truncated(),
+                            envs_[env_id]->get_lives(),
+                            envs_[env_id]->get_frame_number(),
+                            envs_[env_id]->get_episode_frame_number(),
+                            false  // has_final_obs
+                        );
+
                     } else if (autoreset_mode_ == AutoresetMode::SameStep) {
                         if (action.force_reset) {
-                            // on standard `reset`
+                            // Standard reset
                             envs_[env_id]->reset();
-                            Timestep timestep = envs_[env_id]->get_timestep();
-                            timestep.final_observation = nullptr;
-                            state_buffer_->write(timestep);
+
+                            // Write observation directly to buffer
+                            envs_[env_id]->write_observation_to(obs_buffer);
+
+                            // Write metadata
+                            state_buffer_->write_metadata(
+                                slot_idx,
+                                env_id,
+                                envs_[env_id]->get_reward(),
+                                envs_[env_id]->is_terminated(),
+                                envs_[env_id]->is_truncated(),
+                                envs_[env_id]->get_lives(),
+                                envs_[env_id]->get_frame_number(),
+                                envs_[env_id]->get_episode_frame_number(),
+                                false  // has_final_obs
+                            );
+
                         } else {
+                            // Step the environment
                             envs_[env_id]->step();
-                            Timestep step_timestep = envs_[env_id]->get_timestep();
 
-                            // if episode over, autoreset
+                            // Check if episode ended
                             if (envs_[env_id]->is_episode_over()) {
-                                final_obs_storage_[env_id] = step_timestep.observation;
+                                // Save final observation before reset
+                                uint8_t* final_obs_buffer = state_buffer_->get_final_observation_buffer(env_id);
+                                envs_[env_id]->write_observation_to(final_obs_buffer);
 
+                                // Get reward/terminated/truncated before reset
+                                reward_t step_reward = envs_[env_id]->get_reward();
+                                bool step_terminated = envs_[env_id]->is_terminated();
+                                bool step_truncated = envs_[env_id]->is_truncated();
+
+                                // Reset the environment
                                 envs_[env_id]->reset();
-                                Timestep reset_timestep = envs_[env_id]->get_timestep();
 
-                                reset_timestep.final_observation = &final_obs_storage_[env_id];
-                                reset_timestep.reward = step_timestep.reward;
-                                reset_timestep.terminated = step_timestep.terminated;
-                                reset_timestep.truncated = step_timestep.truncated;
+                                // Write new observation to slot buffer
+                                envs_[env_id]->write_observation_to(obs_buffer);
 
-                                // Write the reset timestep with the some of the step timestep data
-                                state_buffer_->write(reset_timestep);
+                                // Write metadata with step reward/terminated/truncated but reset observation
+                                state_buffer_->write_metadata(
+                                    slot_idx,
+                                    env_id,
+                                    step_reward,
+                                    step_terminated,
+                                    step_truncated,
+                                    envs_[env_id]->get_lives(),
+                                    envs_[env_id]->get_frame_number(),
+                                    envs_[env_id]->get_episode_frame_number(),
+                                    true  // has_final_obs
+                                );
+
                             } else {
-                                step_timestep.final_observation = nullptr;
-                                state_buffer_->write(step_timestep);
+                                // Normal step, no autoreset
+                                envs_[env_id]->write_observation_to(obs_buffer);
+
+                                // Write metadata
+                                state_buffer_->write_metadata(
+                                    slot_idx,
+                                    env_id,
+                                    envs_[env_id]->get_reward(),
+                                    envs_[env_id]->is_terminated(),
+                                    envs_[env_id]->is_truncated(),
+                                    envs_[env_id]->get_lives(),
+                                    envs_[env_id]->get_frame_number(),
+                                    envs_[env_id]->get_episode_frame_number(),
+                                    false  // has_final_obs
+                                );
                             }
                         }
                     } else {

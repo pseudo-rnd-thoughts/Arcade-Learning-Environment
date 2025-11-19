@@ -142,9 +142,9 @@ namespace ale::vector {
          *
          * @param reset_indices Vector of environment indices to be reset
          * @param reset_seeds Vector of environment seeds to use
-         * @return Timesteps from all environments after reset
+         * @return BatchData from all environments after reset
          */
-        std::vector<Timestep> reset(const std::vector<int> &reset_indices, const std::vector<int> &reset_seeds) {
+        BatchData reset(const std::vector<int> &reset_indices, const std::vector<int> &reset_seeds) {
             vectorizer_->reset(reset_indices, reset_seeds);
             return recv();
         }
@@ -179,12 +179,12 @@ namespace ale::vector {
         /**
         * Returns the environment's data for the environments
         */
-        const std::vector<Timestep> recv() {
-            std::vector<Timestep> timesteps = vectorizer_->recv();
-            for (size_t i = 0; i < timesteps.size(); i++) {
-                received_env_ids_[i] = timesteps[i].env_id;
+        BatchData recv() {
+            BatchData batch = vectorizer_->recv();
+            for (size_t i = 0; i < batch.batch_size; i++) {
+                received_env_ids_[i] = batch.env_ids[i];
             }
-            return timesteps;
+            return batch;
         }
 
         /**

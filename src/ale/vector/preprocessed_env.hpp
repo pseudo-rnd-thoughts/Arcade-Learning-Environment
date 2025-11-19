@@ -236,35 +236,68 @@ namespace ale::vector {
         }
 
         /**
-         * Get the current observation
+         * Write the current observation directly to a buffer (zero-copy)
+         * @param dest_buffer Pointer to the destination buffer (must be at least stack_num_ * obs_size_ bytes)
          */
-        Timestep get_timestep() const {
-            Timestep timestep;
-            timestep.env_id = env_id_;
-
-            timestep.reward = reward_;
-            timestep.terminated = game_over_ || ((life_loss_info_ || episodic_life_) && was_life_lost_);
-            timestep.truncated = elapsed_step_ >= max_episode_steps_ && !timestep.terminated;
-
-            timestep.lives = lives_;
-            timestep.frame_number = env_->getFrameNumber();
-            timestep.episode_frame_number = env_->getEpisodeFrameNumber();
-
-            // Copy frames from oldest to newest into a single observation
-            timestep.observation.resize(obs_size_ * stack_num_);
+        void write_observation_to(uint8_t* dest_buffer) const {
+            // Copy frames from oldest to newest into the destination buffer
             for (int i = 0; i < stack_num_; ++i) {
                 int src_idx = (frame_stack_idx_ + i) % stack_num_;
                 std::memcpy(
-                    timestep.observation.data() + i * obs_size_,
+                    dest_buffer + i * obs_size_,
                     frame_stack_.data() + src_idx * obs_size_,
                     obs_size_
                 );
             }
+        }
 
-            // Initialize as nullptr and set in AsyncVectorizer if needed
-            timestep.final_observation = nullptr;
+        /**
+         * Get the environment ID
+         */
+        int get_env_id() const {
+            return env_id_;
+        }
 
-            return timestep;
+        /**
+         * Get the current reward
+         */
+        reward_t get_reward() const {
+            return reward_;
+        }
+
+        /**
+         * Check if the environment is terminated
+         */
+        bool is_terminated() const {
+            return game_over_ || ((life_loss_info_ || episodic_life_) && was_life_lost_);
+        }
+
+        /**
+         * Check if the environment is truncated
+         */
+        bool is_truncated() const {
+            return elapsed_step_ >= max_episode_steps_ && !is_terminated();
+        }
+
+        /**
+         * Get the current number of lives
+         */
+        int get_lives() const {
+            return lives_;
+        }
+
+        /**
+         * Get the frame number since the beginning of the game
+         */
+        int get_frame_number() const {
+            return env_->getFrameNumber();
+        }
+
+        /**
+         * Get the frame number since the beginning of the episode
+         */
+        int get_episode_frame_number() const {
+            return env_->getEpisodeFrameNumber();
         }
 
         /**

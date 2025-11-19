@@ -61,34 +61,33 @@ ffi::Error XLAResetImpl(
         vectorizer->reset(reset_indices, reset_seeds);
 
         // Receive the observations after reset
-        auto timesteps = vectorizer->recv();
+        auto batch = vectorizer->recv();
 
-        if (timesteps.empty()) {
-            return ffi::Error::Internal("No timesteps received after step");
-        } else if (timesteps.size() != vectorizer->get_batch_size()) {
+        if (batch.batch_size == 0) {
+            return ffi::Error::Internal("No timesteps received after reset");
+        } else if (batch.batch_size != vectorizer->get_batch_size()) {
             return ffi::Error::Internal("Number of timesteps is wrong");
         }
 
-        size_t stacked_obs_size = vectorizer->get_stacked_obs_size();
+        size_t stacked_obs_size = batch.obs_size;
+        size_t batch_size = batch.batch_size;
 
         // Check if the observations buffer is large enough
-        if (observations_buffer->element_count() != vectorizer->get_batch_size() * stacked_obs_size) {
+        if (observations_buffer->element_count() != batch_size * stacked_obs_size) {
             return ffi::Error::Internal("Observations buffer is the wrong size");
         }
 
-        for (int i = 0; i < vectorizer->get_batch_size(); ++i) {
-            const auto& timestep = timesteps[i];
-
-            std::memcpy(
-                observations_buffer->typed_data() + i * stacked_obs_size,
-                timestep.observation.data(),
-                stacked_obs_size
-            );
-            env_ids_buffer->typed_data()[i] = timestep.env_id;
-            lives_buffer->typed_data()[i] = timestep.lives;
-            frame_numbers_buffer->typed_data()[i] = timestep.frame_number;
-            episode_frame_numbers_buffer->typed_data()[i] = timestep.episode_frame_number;
-        }
+        // Bulk copy from BatchData (single memcpy per field)
+        std::memcpy(observations_buffer->typed_data(), batch.observations.data(),
+                   batch_size * stacked_obs_size);
+        std::memcpy(env_ids_buffer->typed_data(), batch.env_ids.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(lives_buffer->typed_data(), batch.lives.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(frame_numbers_buffer->typed_data(), batch.frame_numbers.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(episode_frame_numbers_buffer->typed_data(), batch.episode_frame_numbers.data(),
+                   batch_size * sizeof(int32_t));
 
         return ffi::Error::Success();
     }
@@ -203,69 +202,59 @@ ffi::Error XLAResetGPUImpl(
         vectorizer->reset(reset_indices, reset_seeds);
 
         // Receive the observations after reset
-        auto timesteps = vectorizer->recv();
+        auto batch = vectorizer->recv();
 
-        if (timesteps.empty()) {
+        if (batch.batch_size == 0) {
             return ffi::Error::Internal("No timesteps received after reset (GPU)");
-        } else if (timesteps.size() != vectorizer->get_batch_size()) {
+        } else if (batch.batch_size != vectorizer->get_batch_size()) {
             return ffi::Error::Internal("Number of timesteps is wrong (GPU)");
         }
 
-        size_t stacked_obs_size = vectorizer->get_stacked_obs_size();
-        size_t batch_size = vectorizer->get_batch_size();
+        size_t stacked_obs_size = batch.obs_size;
+        size_t batch_size = batch.batch_size;
 
         // Check if the observations buffer is large enough
         if (observations_buffer->element_count() != batch_size * stacked_obs_size) {
             return ffi::Error::Internal("Observations buffer is the wrong size (GPU)");
         }
 
-        // Prepare host buffers
-        std::vector<uint8_t> host_observations(batch_size * stacked_obs_size);
-        std::vector<int32_t> host_env_ids(batch_size);
-        std::vector<int32_t> host_lives(batch_size);
-        std::vector<int32_t> host_frame_numbers(batch_size);
-        std::vector<int32_t> host_episode_frame_numbers(batch_size);
-
-        for (size_t i = 0; i < batch_size; ++i) {
-            const auto& timestep = timesteps[i];
-            std::memcpy(host_observations.data() + i * stacked_obs_size,
-                        timestep.observation.data(), stacked_obs_size);
-            host_env_ids[i] = timestep.env_id;
-            host_lives[i] = timestep.lives;
-            host_frame_numbers[i] = timestep.frame_number;
-            host_episode_frame_numbers[i] = timestep.episode_frame_number;
-        }
+        // BatchData already has flat arrays, so we can use them directly as host buffers
+        const uint8_t* host_observations = batch.observations.data();
+        const int32_t* host_env_ids = batch.env_ids.data();
+        const int32_t* host_lives = batch.lives.data();
+        const int32_t* host_frame_numbers = batch.frame_numbers.data();
+        const int32_t* host_episode_frame_numbers = batch.episode_frame_numbers.data();
 
         // Copy results to GPU
-        err = cudaMemcpyAsync(observations_buffer->typed_data(), host_observations.data(),
+        err = cudaMemcpyAsync(observations_buffer->typed_data(), host_observations,
                               batch_size * stacked_obs_size,
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (observations H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(env_ids_buffer->typed_data(), host_env_ids.data(),
+        err = cudaMemcpyAsync(env_ids_buffer->typed_data(), host_env_ids,
                               batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (env_ids H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(lives_buffer->typed_data(), host_lives.data(),
+        err = cudaMemcpyAsync(lives_buffer->typed_data(), host_lives,
                               batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (lives H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(frame_numbers_buffer->typed_data(), host_frame_numbers.data(),
+        err = cudaMemcpyAsync(frame_numbers_buffer->typed_data(), host_frame_numbers,
                               batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (frame_numbers H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(episode_frame_numbers_buffer->typed_data(), host_episode_frame_numbers.data(),
+        err = cudaMemcpyAsync(episode_frame_numbers_buffer->typed_data(), host_episode_frame_numbers,
                               batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
@@ -363,37 +352,39 @@ ffi::Error XLAStepImpl(
         vectorizer->send(actions);
 
         // Receive the timesteps
-        auto timesteps = vectorizer->recv();
+        auto batch = vectorizer->recv();
 
-        if (timesteps.empty()) {
+        if (batch.batch_size == 0) {
             return ffi::Error::Internal("No timesteps received after step");
-        } else if (timesteps.size() != vectorizer->get_batch_size()) {
+        } else if (batch.batch_size != vectorizer->get_batch_size()) {
             return ffi::Error::Internal("Number of timesteps is wrong");
         }
 
-        size_t stacked_obs_size = vectorizer->get_stacked_obs_size();
+        size_t stacked_obs_size = batch.obs_size;
+        size_t batch_size = batch.batch_size;
 
         // Check if the observations buffer is large enough
-        if (observations_buffer->element_count() != vectorizer->get_batch_size() * stacked_obs_size) {
+        if (observations_buffer->element_count() != batch_size * stacked_obs_size) {
             return ffi::Error::Internal("Observations buffer is the wrong size");
         }
 
-        for (int i = 0; i < vectorizer->get_batch_size(); ++i) {
-            const auto& timestep = timesteps[i];
-
-            std::memcpy(
-                observations_buffer->typed_data() + i * stacked_obs_size,
-                timestep.observation.data(),
-                stacked_obs_size
-            );
-            rewards_buffer->typed_data()[i] = timestep.reward;
-            terminations_buffer->typed_data()[i] = timestep.terminated;
-            truncations_buffer->typed_data()[i] = timestep.truncated;
-            env_id_buffer->typed_data()[i] = timestep.env_id;
-            lives_buffer->typed_data()[i] = timestep.lives;
-            frame_numbers_buffer->typed_data()[i] = timestep.frame_number;
-            episode_frame_numbers_buffer->typed_data()[i] = timestep.episode_frame_number;
-        }
+        // Bulk copy from BatchData (single memcpy per field)
+        std::memcpy(observations_buffer->typed_data(), batch.observations.data(),
+                   batch_size * stacked_obs_size);
+        std::memcpy(rewards_buffer->typed_data(), batch.rewards.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(terminations_buffer->typed_data(), batch.terminated.data(),
+                   batch_size * sizeof(uint8_t));
+        std::memcpy(truncations_buffer->typed_data(), batch.truncated.data(),
+                   batch_size * sizeof(uint8_t));
+        std::memcpy(env_id_buffer->typed_data(), batch.env_ids.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(lives_buffer->typed_data(), batch.lives.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(frame_numbers_buffer->typed_data(), batch.frame_numbers.data(),
+                   batch_size * sizeof(int32_t));
+        std::memcpy(episode_frame_numbers_buffer->typed_data(), batch.episode_frame_numbers.data(),
+                   batch_size * sizeof(int32_t));
 
         return ffi::Error::Success();
     }
@@ -526,96 +517,84 @@ ffi::Error XLAStepGPUImpl(
         vectorizer->send(actions);
 
         // Receive the timesteps
-        auto timesteps = vectorizer->recv();
+        auto batch = vectorizer->recv();
 
-        if (timesteps.empty()) {
+        if (batch.batch_size == 0) {
             return ffi::Error::Internal("No timesteps received after step (GPU)");
-        } else if (timesteps.size() != num_envs) {
+        } else if (batch.batch_size != num_envs) {
             return ffi::Error::Internal("Number of timesteps is wrong (GPU)");
         }
 
-        size_t stacked_obs_size = vectorizer->get_stacked_obs_size();
+        size_t stacked_obs_size = batch.obs_size;
+        size_t batch_size = batch.batch_size;
 
         // Check if the observations buffer is large enough
-        if (observations_buffer->element_count() != num_envs * stacked_obs_size) {
+        if (observations_buffer->element_count() != batch_size * stacked_obs_size) {
             return ffi::Error::Internal("Observations buffer is the wrong size (GPU)");
         }
 
-        // Prepare host buffers (use uint8_t for bool to avoid std::vector<bool> specialization issues)
-        std::vector<uint8_t> host_observations(num_envs * stacked_obs_size);
-        std::vector<int32_t> host_rewards(num_envs);
-        std::vector<uint8_t> host_terminations(num_envs);
-        std::vector<uint8_t> host_truncations(num_envs);
-        std::vector<int32_t> host_env_ids(num_envs);
-        std::vector<int32_t> host_lives(num_envs);
-        std::vector<int32_t> host_frame_numbers(num_envs);
-        std::vector<int32_t> host_episode_frame_numbers(num_envs);
-
-        for (size_t i = 0; i < num_envs; ++i) {
-            const auto& timestep = timesteps[i];
-            std::memcpy(host_observations.data() + i * stacked_obs_size,
-                        timestep.observation.data(), stacked_obs_size);
-            host_rewards[i] = timestep.reward;
-            host_terminations[i] = timestep.terminated ? 1 : 0;
-            host_truncations[i] = timestep.truncated ? 1 : 0;
-            host_env_ids[i] = timestep.env_id;
-            host_lives[i] = timestep.lives;
-            host_frame_numbers[i] = timestep.frame_number;
-            host_episode_frame_numbers[i] = timestep.episode_frame_number;
-        }
+        // BatchData already has flat arrays (uint8_t for bools), so we can use them directly as host buffers
+        const uint8_t* host_observations = batch.observations.data();
+        const int32_t* host_rewards = batch.rewards.data();
+        const uint8_t* host_terminations = batch.terminated.data();
+        const uint8_t* host_truncations = batch.truncated.data();
+        const int32_t* host_env_ids = batch.env_ids.data();
+        const int32_t* host_lives = batch.lives.data();
+        const int32_t* host_frame_numbers = batch.frame_numbers.data();
+        const int32_t* host_episode_frame_numbers = batch.episode_frame_numbers.data();
 
         // Copy results to GPU
-        err = cudaMemcpyAsync(observations_buffer->typed_data(), host_observations.data(),
-                              num_envs * stacked_obs_size,
+        err = cudaMemcpyAsync(observations_buffer->typed_data(), host_observations,
+                              batch_size * stacked_obs_size,
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (observations H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(rewards_buffer->typed_data(), host_rewards.data(),
-                              num_envs * sizeof(int32_t),
+        err = cudaMemcpyAsync(rewards_buffer->typed_data(), host_rewards,
+                              batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (rewards H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(terminations_buffer->typed_data(), host_terminations.data(),
-                              num_envs * sizeof(uint8_t),
+        err = cudaMemcpyAsync(terminations_buffer->typed_data(), host_terminations,
+                              batch_size * sizeof(uint8_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (terminations H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(truncations_buffer->typed_data(), host_truncations.data(),
-                              num_envs * sizeof(uint8_t),
+        err = cudaMemcpyAsync(truncations_buffer->typed_data(), host_truncations,
+                              batch_size * sizeof(uint8_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (truncations H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(env_id_buffer->typed_data(), host_env_ids.data(),
-                              num_envs * sizeof(int32_t),
+        err = cudaMemcpyAsync(env_id_buffer->typed_data(), host_env_ids,
+                              batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (env_ids H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(lives_buffer->typed_data(), host_lives.data(),
-                              num_envs * sizeof(int32_t),
+        err = cudaMemcpyAsync(lives_buffer->typed_data(), host_lives,
+                              batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (lives H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(frame_numbers_buffer->typed_data(), host_frame_numbers.data(),
-                              num_envs * sizeof(int32_t),
+        err = cudaMemcpyAsync(frame_numbers_buffer->typed_data(), host_frame_numbers,
+                              batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (frame_numbers H2D): ") + cudaGetErrorString(err));
         }
 
-        err = cudaMemcpyAsync(episode_frame_numbers_buffer->typed_data(), host_episode_frame_numbers.data(),
-                              num_envs * sizeof(int32_t),
+        err = cudaMemcpyAsync(episode_frame_numbers_buffer->typed_data(), host_episode_frame_numbers,
+                              batch_size * sizeof(int32_t),
                               cudaMemcpyHostToDevice, stream);
         if (err != cudaSuccess) {
             return ffi::Error::Internal(std::string("CUDA memcpy failed (episode_frame_numbers H2D): ") + cudaGetErrorString(err));
