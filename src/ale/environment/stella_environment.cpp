@@ -34,7 +34,8 @@ StellaEnvironment::StellaEnvironment(OSystem* osystem, RomSettings* settings)
       m_phosphor_blend(osystem),
       m_screen(m_osystem->console().mediaSource().height(),
                m_osystem->console().mediaSource().width()),
-      m_actions(4, PLAYER_A_NOOP) {
+      m_actions{PLAYER_A_NOOP, PLAYER_A_NOOP, PLAYER_A_NOOP, PLAYER_A_NOOP},
+      m_paddle_strength{1.0f, 1.0f, 1.0f, 1.0f} {
   // Determine whether this is a paddle-based game
   if (m_osystem->console().properties().get(Controller_Left) == "PADDLES" ||
       m_osystem->console().properties().get(Controller_Right) == "PADDLES") {
@@ -156,13 +157,13 @@ reward_t StellaEnvironment::act(Action player_a_action, Action player_b_action,
   for (size_t i = 0; i < m_frame_skip; i++) {
     // Stochastically drop actions, according to m_repeat_action_probability
     if (rng.nextDouble() >= m_repeat_action_probability) {
-      m_player_a_action = player_a_action;
-      m_paddle_a_strength = paddle_a_strength;
+      m_actions[0] = player_a_action;
+      m_paddle_strength[0] = paddle_a_strength;
     }
     // @todo Possibly optimize by avoiding call to rand() when player B is "off" ?
     if (rng.nextDouble() >= m_repeat_action_probability) {
-      m_player_b_action = player_b_action;
-      m_paddle_b_strength = paddle_b_strength;
+      m_actions[1] = (Action)((int)player_b_action - PLAYER_B_NOOP + PLAYER_A_NOOP);
+      m_paddle_strength[1] = paddle_b_strength;
     }
 
     // If so desired, request one frame's worth of sound (this does nothing if recording
@@ -177,8 +178,10 @@ reward_t StellaEnvironment::act(Action player_a_action, Action player_b_action,
       m_screen_exporter->saveNext(m_screen);
 
     // Use the stored actions, which may or may not have changed this frame
-    sum_rewards += oneStepAct(m_player_a_action, m_player_b_action,
-                              m_paddle_a_strength, m_paddle_b_strength);
+    // Convert m_actions[1] back to PLAYER_B range for the two-player API
+    Action player_b_action_converted = (Action)((int)m_actions[1] + PLAYER_B_NOOP - PLAYER_A_NOOP);
+    sum_rewards += oneStepAct(m_actions[0], player_b_action_converted,
+                              m_paddle_strength[0], m_paddle_strength[1]);
 
     // Process audio for user queries (accounts for frame_skip)
     processAudio(i);

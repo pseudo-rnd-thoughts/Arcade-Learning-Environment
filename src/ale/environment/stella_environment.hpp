@@ -176,15 +176,10 @@ class StellaEnvironment {
   int m_reward_min;                // Minimum reward value
   int m_reward_max;                // Maximum reward value
 
-  // The last actions taken by our players (for single/two-player mode)
-  Action m_player_a_action, m_player_b_action;
-  float m_paddle_a_strength, m_paddle_b_strength;
-  float m_player_a_r, m_player_b_r;
-  float m_player_a_theta, m_player_b_theta;
-  float m_player_a_fire, m_player_b_fire;
-
-  // The last actions taken by players (for multi-player mode, up to 4 players)
+  // The last actions taken by players (up to 4 players)
+  // All actions stored in PLAYER_A range (0-17) for consistency
   std::vector<Action> m_actions;
+  std::vector<float> m_paddle_strength;
 };
 
 }  // namespace ale
