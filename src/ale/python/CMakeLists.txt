@@ -22,24 +22,33 @@ if (BUILD_VECTOR_LIB AND BUILD_VECTOR_XLA_LIB)
     )
     message(STATUS "XLA include directory: '${XLA_DIR}'")
 
-    # Find CUDA toolkit for headers and linking (optional - XLA disabled if not found)
-    find_package(CUDAToolkit QUIET)
+    target_sources(_ale_py PRIVATE ale_vector_python_interface.cpp ale_vector_xla_interface.cpp)
+    target_include_directories(_ale_py PUBLIC ${XLA_DIR})
+    target_compile_definitions(_ale_py PRIVATE BUILD_VECTOR_LIB BUILD_VECTOR_XLA_LIB)
+    set_target_properties(_ale_py PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-    if (CUDAToolkit_FOUND)
-        message(STATUS "CUDA Toolkit found: ${CUDAToolkit_VERSION}")
-        target_sources(_ale_py PRIVATE ale_vector_python_interface.cpp ale_vector_xla_interface.cpp)
-        target_include_directories(_ale_py PUBLIC ${XLA_DIR})
+    # CUDA is optional: when found we build GPU handlers as well, otherwise the
+    # XLA targets are registered only against the CPU platform. macOS never has
+    # CUDA; on Linux/Windows it is auto-detected unless ALE_DISABLE_CUDA=1 sets
+    # BUILD_VECTOR_XLA_GPU_LIB=OFF via the scikit-build override.
+    if (BUILD_VECTOR_XLA_GPU_LIB)
+        find_package(CUDAToolkit QUIET)
+        if (NOT CUDAToolkit_FOUND)
+            message(FATAL_ERROR
+                "CUDA Toolkit not found, but BUILD_VECTOR_XLA_GPU_LIB=ON.\n"
+                "  Either install the CUDA Toolkit (nvcc + cudart headers) from\n"
+                "    https://developer.nvidia.com/cuda-downloads\n"
+                "  or set ALE_DISABLE_CUDA=1 before running pip install to build\n"
+                "  XLA with CPU handlers only:\n"
+                "    Linux/macOS:  ALE_DISABLE_CUDA=1 pip install -v .\n"
+                "    Windows PS:   $env:ALE_DISABLE_CUDA = \"1\"; pip install -v .")
+        endif()
+        message(STATUS "CUDA Toolkit found: ${CUDAToolkit_VERSION} - building XLA GPU handlers")
         target_include_directories(_ale_py PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-        target_compile_definitions(_ale_py PRIVATE BUILD_VECTOR_LIB BUILD_VECTOR_XLA_LIB)
+        target_compile_definitions(_ale_py PRIVATE ALE_GPU_SUPPORT)
         target_link_libraries(_ale_py PRIVATE CUDA::cudart)
-
-        set_target_properties(_ale_py PROPERTIES
-            POSITION_INDEPENDENT_CODE ON
-        )
     else()
-        message(WARNING "CUDA Toolkit not found - disabling XLA support. Install CUDA Toolkit to enable XLA.")
-        target_sources(_ale_py PRIVATE ale_vector_python_interface.cpp)
-        target_compile_definitions(_ale_py PRIVATE BUILD_VECTOR_LIB)
+        message(STATUS "CUDA disabled - building XLA CPU handlers only")
     endif()
 elseif (BUILD_VECTOR_LIB)
     target_sources(_ale_py PRIVATE ale_vector_python_interface.cpp)

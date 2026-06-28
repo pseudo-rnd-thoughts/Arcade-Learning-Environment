@@ -103,6 +103,20 @@ cmake --build . --target install
 There are optional flags `-DSDL_SUPPORT=ON/OFF` to toggle SDL support (i.e., `display_screen` and `sound` support; `OFF` by default), `-DBUILD_CPP_LIB=ON/OFF` to build
 the `ale-lib` C++ target (`ON` by default), and `-DBUILD_PYTHON_LIB=ON/OFF` to build the pybind11 wrapper (`ON` by default).
 
+### Local Python source builds without CUDA
+
+On Windows and Linux, `pip install .` builds the XLA vector interface with both CPU and GPU handlers by default; the GPU handlers require the CUDA Toolkit (`nvcc`, headers) to be installed. If you don't have CUDA locally, set `ALE_DISABLE_CUDA=1` before installing — XLA still builds, but with CPU handlers only:
+
+```sh
+# Linux / macOS
+ALE_DISABLE_CUDA=1 pip install -v .
+
+# Windows PowerShell
+$env:ALE_DISABLE_CUDA = "1"; pip install -v .
+```
+
+macOS builds are always CPU-only (no CUDA support).
+
 Finally, you can link against the ALE in your own CMake project as follows
 
 ```cmake

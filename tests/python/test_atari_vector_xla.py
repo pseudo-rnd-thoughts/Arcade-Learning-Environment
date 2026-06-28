@@ -1,11 +1,23 @@
 import numpy as np
 import pytest
+import ale_py
 from ale_py import AtariVectorEnv
 from gymnasium.utils.env_checker import data_equivalence
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
 chex = pytest.importorskip("chex")
+
+
+def _gpu_devices():
+    try:
+        return jax.devices("gpu")
+    except RuntimeError:
+        return []
+
+
+HAS_GPU = len(_gpu_devices()) > 0
+HAS_GPU_HANDLERS = hasattr(ale_py._ale_py, "VectorXLAResetGPU")
 
 
 def assert_rollout_equivalence(
@@ -44,6 +56,35 @@ def assert_rollout_equivalence(
 
     envs_1.close()
     envs_2.close()
+
+
+@pytest.mark.skipif(
+    not (HAS_GPU and HAS_GPU_HANDLERS),
+    reason="Requires CUDA-enabled JAX device and ale-py built with CUDA support",
+)
+def test_xla_dispatches_to_gpu():
+    """When CUDA is available, AtariVectorEnv.xla() must run the GPU FFI handler, not CPU."""
+    envs = AtariVectorEnv("pong", num_envs=4)
+    handle, xla_reset, xla_step = envs.xla()
+
+    gpu_device = _gpu_devices()[0]
+
+    with jax.default_device(gpu_device):
+        handle = jnp.asarray(handle)
+        handle, (obs, info) = xla_reset(handle, seed=jnp.arange(4, dtype=jnp.int32))
+
+        # If dispatch landed on CPU, the output buffers would live on a CPU device.
+        assert "gpu" in str(obs.devices()).lower() or "cuda" in str(obs.devices()).lower(), (
+            f"Expected obs on a GPU device, got {obs.devices()}"
+        )
+
+        actions = jnp.zeros(4, dtype=jnp.int32)
+        handle, (obs2, _r, _t, _tr, _info2) = xla_step(handle, actions)
+        assert "gpu" in str(obs2.devices()).lower() or "cuda" in str(obs2.devices()).lower(), (
+            f"Expected step obs on a GPU device, got {obs2.devices()}"
+        )
+
+    envs.close()
 
 
 @pytest.mark.parametrize(

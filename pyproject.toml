@@ -85,17 +85,68 @@ metadata.version.provider = "scikit_build_core.metadata.regex"
 metadata.version.input = "version.txt"
 metadata.version.regex = "(?P<value>.+)"
 
-# Enable XLA on Windows and Linux
 [[tool.scikit-build.overrides]]
-if.platform-system = "^(win32|linux)"
+if.platform-system = "darwin"
+if.platform-machine = "arm64"
 cmake.args = [
     "-DSDL_SUPPORT=ON",
     "-DSDL_DYNLOAD=ON",
     "-DBUILD_CPP_LIB=OFF",
     "-DBUILD_PYTHON_LIB=ON",
     "-DBUILD_VECTOR_LIB=ON",
-    "-DBUILD_VECTOR_XLA_LIB=ON"  # add vector-xla-lib="ON"
+    "-DBUILD_VECTOR_XLA_LIB=ON",
+    "-DBUILD_VECTOR_XLA_GPU_LIB=OFF",
+    "-DVCPKG_TARGET_TRIPLET=arm64-osx-mixed"
 ]
+
+[[tool.scikit-build.overrides]]
+if.platform-system = "win32"
+cmake.args = [
+    "-DSDL_SUPPORT=ON",
+    "-DSDL_DYNLOAD=ON",
+    "-DBUILD_CPP_LIB=OFF",
+    "-DBUILD_PYTHON_LIB=ON",
+    "-DBUILD_VECTOR_LIB=ON",
+    "-DBUILD_VECTOR_XLA_LIB=ON",
+    "-DBUILD_VECTOR_XLA_GPU_LIB=ON",
+    "-DVCPKG_TARGET_TRIPLET=x64-windows-mixed"
+]
+
+[[tool.scikit-build.overrides]]
+if.platform-system = "linux"
+if.platform-machine = "x86_64"
+cmake.args = [
+    "-DSDL_SUPPORT=ON",
+    "-DSDL_DYNLOAD=ON",
+    "-DBUILD_CPP_LIB=OFF",
+    "-DBUILD_PYTHON_LIB=ON",
+    "-DBUILD_VECTOR_LIB=ON",
+    "-DBUILD_VECTOR_XLA_LIB=ON",
+    "-DBUILD_VECTOR_XLA_GPU_LIB=ON",
+    "-DVCPKG_TARGET_TRIPLET=x64-linux-mixed"
+]
+
+[[tool.scikit-build.overrides]]
+if.platform-system = "linux"
+if.platform-machine = "aarch64"
+cmake.args = [
+    "-DSDL_SUPPORT=ON",
+    "-DSDL_DYNLOAD=ON",
+    "-DBUILD_CPP_LIB=OFF",
+    "-DBUILD_PYTHON_LIB=ON",
+    "-DBUILD_VECTOR_LIB=ON",
+    "-DBUILD_VECTOR_XLA_LIB=ON",
+    "-DBUILD_VECTOR_XLA_GPU_LIB=ON",
+    "-DVCPKG_TARGET_TRIPLET=arm64-linux-mixed"
+]
+
+# Opt-out: when ALE_DISABLE_CUDA=1, skip CUDA detection / GPU handler build.
+# XLA still compiles with CPU handlers so the vector XLA interface remains
+# available for local development without the CUDA Toolkit installed.
+[[tool.scikit-build.overrides]]
+if.env.ALE_DISABLE_CUDA = true
+inherit.cmake.args = "append"
+cmake.args = ["-DBUILD_VECTOR_XLA_GPU_LIB=OFF"]
 
 [tool.cibuildwheel]
 # Skip 32-bit wheels, PyPy, musllinux, cp313t (free-threading was experimental in 3.13),

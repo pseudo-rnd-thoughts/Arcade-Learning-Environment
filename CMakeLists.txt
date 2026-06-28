@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.14)
+cmake_minimum_required (VERSION 3.15)
 
 # Build the C++ shared library
 option(BUILD_CPP_LIB "Build C++ Interface" ON)
