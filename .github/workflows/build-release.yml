@@ -30,19 +30,19 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Set up Docker Buildx
       if: runner.os == 'linux'
       id: buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
       with:
         install: true
 
     - name: Build Docker image with vcpkg
       if: runner.os == 'linux'
       # using build-push-action (without push) to make use of cache arguments
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ".github/docker/manylinux-${{ matrix.arch }}-vcpkg.Dockerfile"
@@ -54,12 +54,12 @@ jobs:
       run: ./scripts/download_unpack_roms.sh
 
     - name: Build wheels
-      uses: pypa/cibuildwheel@v3.0
+      uses: pypa/cibuildwheel@v4.1
       env:
         CIBW_ARCHS: "${{ matrix.arch }}"
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ matrix.runs-on }}-${{ matrix.arch }}
         path: ./wheelhouse/*.whl
@@ -73,29 +73,29 @@ jobs:
 
     steps:
       # create the `ale_py-*.*.*.tar.gz` for source building
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: pip install setuptools
-      - run: python setup.py sdist
+      - run: pip install build
+      - run: python -m build --sdist
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-windows-latest-AMD64
           path: dist
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-ubuntu-latest-x86_64
           path: dist
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-ubuntu-24.04-arm-aarch64
           path: dist
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-macos-latest-arm64
           path: dist
@@ -103,9 +103,9 @@ jobs:
       - run: ls dist/
 
       - name: Upload wheels to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          files: dist/*.wheel
+          files: dist/*
 
       - name: Publish to PyPi test
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -120,10 +120,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@v16
         with:
           version: '3.1.68'
           actions-cache-folder: 'emsdk-cache'
@@ -148,12 +148,12 @@ jobs:
           EMSDK_PATH: ${{ env.EMSDK }}
 
       - name: Upload standalone bundle to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.zip
 
       - name: Upload NPM package artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: npm-package
           path: dist/npm/
@@ -166,7 +166,7 @@ jobs:
 #    if: ${{ secrets.NPM_TOKEN != '' }}
 #
 #    steps:
-#      - uses: actions/download-artifact@v6
+#      - uses: actions/download-artifact@v8
 #        with:
 #          name: npm-package
 #          path: dist/npm/

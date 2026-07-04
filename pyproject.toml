@@ -1,8 +1,8 @@
 [build-system]
 requires = [
     "scikit-build-core>=0.10",
-    "nanobind>=2.1.0",
-    "jax >= 0.4.31; sys_platform == 'win32' or sys_platform == 'linux'"
+    "nanobind>=2.5.0",
+    "jax >= 0.4.31"
 ]
 build-backend = "scikit_build_core.build"
 
@@ -32,6 +32,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -49,21 +50,21 @@ vector = [
 xla = [
     "gymnasium>=1.1.0",
     "opencv-python>=3.0",
-    "jax >= 0.4.31; sys_platform == 'win32' or sys_platform == 'linux'",
-    "chex; sys_platform == 'win32' or sys_platform == 'linux'",
+    "jax >= 0.4.31",
+    "chex",
 ]
 test = [
     "pytest>=7.0",
     "gymnasium>=1.1.0",
     "opencv-python>=3.0",
-    "jax >= 0.4.31; sys_platform == 'win32' or sys_platform == 'linux'",
-    "chex; sys_platform == 'win32' or sys_platform == 'linux'"
+    "jax >= 0.4.31",
+    "chex"
 ]
 
 [project.urls]
 homepage = "https://github.com/Farama-Foundation/Arcade-Learning-Environment"
 documentation = "https://ale.farama.org"
-changelog = "https://github.com/Farama-Foundation/Arcade-Learning-Environment/blob/master/CHANGELOG.md"
+changelog = "https://github.com/Farama-Foundation/Arcade-Learning-Environment/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -72,33 +73,31 @@ testpaths = ["tests"]
 norecursedirs = ["vcpkg", "build"]
 
 [tool.scikit-build]
-cmake.args = [
-    "-DSDL_SUPPORT=ON",
-    "-DSDL_DYNLOAD=ON",
-    "-DBUILD_CPP_LIB=OFF",
-    "-DBUILD_PYTHON_LIB=ON",
-    "-DBUILD_VECTOR_LIB=ON"
-]
-cmake.build-type = "Release"
-metadata.version.provider = "scikit_build_core.metadata.regex"
-metadata.version.input = "version.txt"
-metadata.version.regex = "(?P<value>.+)"
-
-# Enable XLA on Windows and Linux
-[[tool.scikit-build.overrides]]
-if.platform-system = "^(win32|linux)"
+# XLA is enabled by default which requires jax to be installed
 cmake.args = [
     "-DSDL_SUPPORT=ON",
     "-DSDL_DYNLOAD=ON",
     "-DBUILD_CPP_LIB=OFF",
     "-DBUILD_PYTHON_LIB=ON",
     "-DBUILD_VECTOR_LIB=ON",
-    "-DBUILD_VECTOR_XLA_LIB=ON"  # add vector-xla-lib="ON"
+    "-DBUILD_VECTOR_XLA_LIB=ON"
 ]
+cmake.build-type = "Release"
+metadata.version.provider = "scikit_build_core.metadata.regex"
+metadata.version.input = "version.txt"
+metadata.version.regex = "(?P<value>.+)"
+
+# On windows, vcpkg's default triplet (x64-windows) links dynamically but SDL2
+# needs to be static, therefore, force the custom triplet. Linux/macOS
+# are unaffected because vcpkg defaults to static linkage there.
+[[tool.scikit-build.overrides]]
+if.platform-system = "^win32"
+cmake.define.VCPKG_TARGET_TRIPLET = "x64-windows-mixed"
 
 [tool.cibuildwheel]
-# Skip 32-bit wheels, PyPy & musllinux
-skip = ["*-win32", "*i686", "*-musllinux*"]
+# Skip 32-bit wheels, PyPy, musllinux, cp313t (free-threading was experimental in 3.13),
+# and cp314t-win_amd64 (jaxlib does not publish a Windows free-threading wheel).
+skip = ["*-win32", "*i686", "*-musllinux*", "cp313t-*", "cp314t-*"]
 
 build-frontend = "build"
 manylinux-x86_64-image = "manylinux-x86_64-vcpkg:latest"
