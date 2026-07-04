@@ -20,6 +20,17 @@ endif()
 
 option(BUILD_VECTOR_XLA_LIB "Build with Vector XLA Support" OFF)
 
+# Tracy profiler instrumentation for the vector environment (opt-in, off by default).
+# When ON, defines ALE_TRACY_ENABLED and links the Tracy client so the ALE_ZONE_*
+# macros in src/ale/vector/profiling.hpp emit profiling data. Pulls the 'tracy'
+# vcpkg dependency. Build via:
+#   pip install . --config-settings=cmake.define.BUILD_VECTOR_TRACY=ON
+# or, for a plain CMake build, -DBUILD_VECTOR_TRACY=ON alongside -DBUILD_VECTOR_LIB=ON.
+option(BUILD_VECTOR_TRACY "Build the vector interface with Tracy profiling" OFF)
+if (BUILD_VECTOR_TRACY)
+  list(APPEND VCPKG_MANIFEST_FEATURES "tracy")
+endif()
+
 option(BUILD_WASM_LIB "Build WebAssembly Interface" OFF)
 if (BUILD_WASM_LIB)
   add_definitions(-DBUILD_WASM_LIB)

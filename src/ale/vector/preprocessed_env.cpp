@@ -1,5 +1,7 @@
 #include "preprocessed_env.hpp"
 
+#include "profiling.hpp"
+
 namespace ale::vector {
 
 /**
@@ -140,6 +142,7 @@ void PreprocessedEnv::set_action(int action_id, float paddle_strength) {
 }
 
 void PreprocessedEnv::reset() {
+    ALE_ZONE_SCOPED_NC("env_reset", profiling::COLOR_ENV_RESET);
     if (pending_seed_ >= 0) {
         ale_->setInt("random_seed", pending_seed_);
         rng_.seed(pending_seed_);
@@ -148,19 +151,26 @@ void PreprocessedEnv::reset() {
     }
     ale_->reset_game();
 
-    // Press FIRE if required by the environment
-    if (use_fire_reset_ && has_fire_action_) {
-        ale_->act(PLAYER_A_FIRE);
-    }
+    {
+        // The fire + up to noop_max no-op emulator frames are the reset "straggler"
+        // (§1/§8.3): ~34 frames vs. ~4 for a normal step. Kept in its own zone so
+        // the p99 spike at episode boundaries is visible in the timeline.
+        ALE_ZONE_SCOPED_NC("reset_noop_frames", profiling::COLOR_EMULATOR);
 
-    // Perform no-op steps
-    int noop_steps = noop_dist_(rng_) - static_cast<int>(use_fire_reset_ && has_fire_action_);
-    while (noop_steps > 0) {
-        ale_->act(PLAYER_A_NOOP);
-        if (ale_->game_over()) {
-            ale_->reset_game();
+        // Press FIRE if required by the environment
+        if (use_fire_reset_ && has_fire_action_) {
+            ale_->act(PLAYER_A_FIRE);
         }
-        noop_steps--;
+
+        // Perform no-op steps
+        int noop_steps = noop_dist_(rng_) - static_cast<int>(use_fire_reset_ && has_fire_action_);
+        while (noop_steps > 0) {
+            ale_->act(PLAYER_A_NOOP);
+            if (ale_->game_over()) {
+                ale_->reset_game();
+            }
+            noop_steps--;
+        }
     }
 
     // Clear the frame stack
@@ -188,6 +198,8 @@ void PreprocessedEnv::reset() {
 }
 
 void PreprocessedEnv::step() {
+    ALE_ZONE_SCOPED_NC("env_step", profiling::COLOR_ENV_STEP);
+
     // Validate action
     if (current_action_id_ < 0 || current_action_id_ >= static_cast<int>(action_set_.size())) {
         throw std::out_of_range("Invalid action_id: " + std::to_string(current_action_id_) +
@@ -198,23 +210,26 @@ void PreprocessedEnv::step() {
 
     // Execute action for frame_skip frames
     reward_t reward = 0;
-    for (int skip_id = frame_skip_; skip_id > 0; --skip_id) {
-        reward += ale_->act(action, strength);
+    {
+        ALE_ZONE_SCOPED_NC("ale_act_loop", profiling::COLOR_EMULATOR);
+        for (int skip_id = frame_skip_; skip_id > 0; --skip_id) {
+            reward += ale_->act(action, strength);
 
-        game_over_ = ale_->game_over();
-        elapsed_steps_++;
-        was_life_lost_ = ale_->lives() < lives_ && ale_->lives() > 0;
+            game_over_ = ale_->game_over();
+            elapsed_steps_++;
+            was_life_lost_ = ale_->lives() < lives_ && ale_->lives() > 0;
 
-        if (game_over_ || elapsed_steps_ >= max_episode_steps_ || (episodic_life_ && was_life_lost_)) {
-            break;
-        }
+            if (game_over_ || elapsed_steps_ >= max_episode_steps_ || (episodic_life_ && was_life_lost_)) {
+                break;
+            }
 
-        // Captures last two frames for maxpooling
-        if (skip_id <= 2) {
-            if (obs_format_ == ObsFormat::Grayscale) {
-                get_screen_grayscale(raw_frames_[skip_id - 1].data());
-            } else {
-                get_screen_rgb(raw_frames_[skip_id - 1].data());
+            // Captures last two frames for maxpooling
+            if (skip_id <= 2) {
+                if (obs_format_ == ObsFormat::Grayscale) {
+                    get_screen_grayscale(raw_frames_[skip_id - 1].data());
+                } else {
+                    get_screen_rgb(raw_frames_[skip_id - 1].data());
+                }
             }
         }
     }
@@ -226,6 +241,7 @@ void PreprocessedEnv::step() {
 }
 
 void PreprocessedEnv::write_to(const OutputSlot& slot) const {
+    ALE_ZONE_SCOPED_NC("write_to", profiling::COLOR_STAGING);
     *slot.env_id = env_id_;
     *slot.reward = reward_;
     *slot.terminated = game_over_ || ((life_loss_info_ || episodic_life_) && was_life_lost_);
@@ -279,8 +295,11 @@ void PreprocessedEnv::get_screen_rgb(uint8_t* buffer) const {
 }
 
 void PreprocessedEnv::process_screen() {
+    ALE_ZONE_SCOPED_NC("process_screen", profiling::COLOR_PREPROCESS);
+
     // Maxpool raw frames if required
     if (maxpool_) {
+        ALE_ZONE_SCOPED_NC("maxpool", profiling::COLOR_PREPROCESS);
         maxpool_frames(raw_frames_[0].data(), raw_frames_[1].data(), raw_size_);
     }
 
@@ -289,6 +308,7 @@ void PreprocessedEnv::process_screen() {
 
     // Resize directly into the circular buffer or copy if no resize needed
     if (obs_frame_height_ != raw_frame_height_ || obs_frame_width_ != raw_frame_width_) {
+        ALE_ZONE_SCOPED_NC("cv_resize", profiling::COLOR_OPENCV);
         auto cv2_format = (obs_format_ == ObsFormat::Grayscale) ? CV_8UC1 : CV_8UC3;
         cv::Mat src_img(raw_frame_height_, raw_frame_width_, cv2_format, raw_frames_[0].data());
         cv::Mat dst_img(obs_frame_height_, obs_frame_width_, cv2_format, dest_ptr);

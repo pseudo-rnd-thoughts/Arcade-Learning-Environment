@@ -1,5 +1,9 @@
 #include "env_vectorizer.hpp"
 
+#include <string>
+
+#include "profiling.hpp"
+
 #if defined(__linux__)
     #include <pthread.h>
 #elif defined(_WIN32)
@@ -140,6 +144,7 @@ BatchResult EnvVectorizer::reset(const std::vector<int>& env_ids, const std::vec
 }
 
 void EnvVectorizer::send(const std::vector<Action>& actions) {
+    ALE_ZONE_SCOPED_NC("send", profiling::COLOR_QUEUE);
     if (first_batch_) {
         throw std::runtime_error(
             "send() called before reset(); last_recv_env_ids_ is uninitialized"
@@ -172,27 +177,44 @@ void EnvVectorizer::send(const std::vector<Action>& actions) {
 }
 
 BatchResult EnvVectorizer::recv() {
-    // Wait for batch to complete
-    staging_->wait_for_batch();
+    ALE_ZONE_SCOPED_NC("recv", profiling::COLOR_STAGING);
+
+    // Off-CPU wait for the batch barrier (§2.2): time spent here on the main
+    // thread is the recv->send turnaround that all workers stall behind.
+    {
+        ALE_ZONE_SCOPED_NC("wait_for_batch", profiling::COLOR_QUEUE);
+        staging_->wait_for_batch();
+    }
 
     // Check for errors
     check_error();
 
-    // Release batch and get results
-    auto result = staging_->release_batch();
+    // Release batch and get results (per-batch heap alloc of a fresh BatchResult, §5.1)
+    BatchResult result = staging_->release_batch();
 
     // Remember env_ids for next send()
     std::memcpy(last_recv_env_ids_.data(), result.env_ids_data(), batch_size_ * sizeof(int));
+
+    // One recv() == one logical batch/frame in the profiler timeline.
+    ALE_PLOT("action_queue_depth", static_cast<int64_t>(action_queue_->size_approx()));
+    ALE_FRAME_MARK;
 
     return result;
 }
 
 void EnvVectorizer::worker_loop(int thread_id) {
-    (void)thread_id;  // For potential future use (logging, etc.)
+    // Name the thread so per-worker timelines are legible in the profiler (§2.3).
+    ALE_SET_THREAD_NAME(("ale_worker_" + std::to_string(thread_id)).c_str());
 
     while (!stop_.load()) {
         try {
-            Action action = action_queue_->dequeue();
+            Action action;
+            {
+                // Off-CPU dequeue wait: how long this worker blocks for work,
+                // i.e. barrier idle at the batch tail (§2.2).
+                ALE_ZONE_SCOPED_NC("dequeue_wait", profiling::COLOR_QUEUE);
+                action = action_queue_->dequeue();
+            }
 
             if (stop_.load()) {
                 break;
@@ -207,6 +229,7 @@ void EnvVectorizer::worker_loop(int thread_id) {
 }
 
 void EnvVectorizer::execute_env(const Action& action) {
+    ALE_ZONE_SCOPED_NC("execute_env", profiling::COLOR_WORKER);
     int env_id = action.env_id;
     auto& env = *envs_[env_id];
 

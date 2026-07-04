@@ -11,6 +11,7 @@
 
 #include "ale/external/lightweightsemaphore.h"
 #include "types.hpp"
+#include "profiling.hpp"
 
 namespace ale::vector {
 
@@ -41,6 +42,7 @@ public:
     /// @param env_id The environment that produced this result
     /// @param write_fn Callback that writes data to the provided OutputSlot
     void stage_result(int env_id, const std::function<void(OutputSlot&)>& write_fn) {
+        ALE_ZONE_SCOPED_NC("stage_result", profiling::COLOR_STAGING);
         std::size_t slot;
 
         if (ordered_mode_) {

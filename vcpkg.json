@@ -38,6 +38,15 @@
           "default-features": false
         }
       ]
+    },
+    "tracy": {
+      "description": "Enable Tracy profiler instrumentation for the vector environment",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "default-features": false
+        }
+      ]
     }
   },
   "builtin-baseline": "3426a5e955f029ab0088ef6656fda06552bd2699",

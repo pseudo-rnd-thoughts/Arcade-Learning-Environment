@@ -72,6 +72,18 @@ if (BUILD_CPP_LIB OR BUILD_PYTHON_LIB)
     add_subdirectory(vector)
 
     target_link_libraries(ale PRIVATE ${OpenCV_LIBS})
+
+    # Optional Tracy profiler instrumentation for the vector environment.
+    # ALE_TRACY_ENABLED is PUBLIC so the macros in profiling.hpp expand to real
+    # Tracy calls in every translation unit that includes it (vector sources and
+    # the Python/XLA interfaces). TracyClient is linked PUBLIC so its symbols are
+    # available in the final _ale_py module / libale.
+    if (BUILD_VECTOR_TRACY)
+      find_package(Tracy CONFIG REQUIRED)
+      target_compile_definitions(ale PUBLIC ALE_TRACY_ENABLED)
+      target_link_libraries(ale PUBLIC Tracy::TracyClient)
+      message(STATUS "Vector environment: Tracy profiling ENABLED")
+    endif()
   endif()
 endif()
 

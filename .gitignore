@@ -170,3 +170,19 @@ cython_debug/
 cmake-build-*
 .idea
 /build-wasm/
+
+# ---------------------------------------------------------------------------
+# Autoresearch loop (autoresearch/, .claude/skills/ale-vector-autoresearch/)
+# ---------------------------------------------------------------------------
+# Disposable / regenerable outputs are ignored (gitignore has no inline
+# comments, so keep each pattern on its own line):
+#   report/       - rendered plot + tables; rebuild with analyse.py
+#   divergences/  - verify.py debug frame dumps on a gate failure
+autoresearch/report/
+autoresearch/divergences/
+autoresearch/**/__pycache__/
+#
+# Deliberately NOT ignored (the durable blog trail — commit these):
+#   autoresearch/records/     per-iteration narrative JSON (survives reverts)
+#   autoresearch/results/     baseline/benchmarks + per-iter bench/verdict JSON
+#   autoresearch/JOURNAL.md, goldens/, protected.sha256, and the *.py harness

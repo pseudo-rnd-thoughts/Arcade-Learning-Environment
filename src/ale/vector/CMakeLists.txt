@@ -1,6 +1,7 @@
 target_sources(ale
     PRIVATE
         types.hpp
+        profiling.hpp
         action_queue.hpp
         result_staging.hpp
         preprocessed_env.hpp

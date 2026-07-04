@@ -10,6 +10,7 @@
 
 #include "ale/external/lightweightsemaphore.h"
 #include "types.hpp"
+#include "profiling.hpp"
 
 namespace ale::vector {
 
@@ -26,6 +27,7 @@ public:
 
     /// Enqueue multiple actions at once. Thread-safe.
     void enqueue_bulk(const std::vector<Action>& actions) {
+        ALE_ZONE_SCOPED_NC("enqueue_bulk", profiling::COLOR_QUEUE);
         std::size_t pos = alloc_idx_.fetch_add(actions.size());
         for (std::size_t i = 0; i < actions.size(); ++i) {
             queue_[(pos + i) % capacity_] = actions[i];
