@@ -88,6 +88,10 @@ class ALEInterface {
   // game over screen.
   reward_t act(Action action, float paddle_strength = 1.0);
 
+  // Multiplayer version of the act function.
+  // Takes in one action per player and returns one reward per player.
+  std::vector<reward_t> act(std::vector<Action> actions);
+
   // Indicates if the game has ended.
   bool game_over(bool with_truncation = true) const;
 
@@ -101,6 +105,9 @@ class ALEInterface {
   // This should be called only after the rom is loaded.
   ModeVect getAvailableModes() const;
 
+  // Returns the vector of modes available for a given number of players.
+  ModeVect getAvailableModes(int num_players) const;
+
   // Sets the mode of the game.
   // The mode must be an available mode (otherwise it throws an exception).
   // This should be called only after the rom is loaded.
@@ -110,6 +117,10 @@ class ALEInterface {
   // This may not be the exact game mode that the ROM is currently running as
   // game mode changes only take effect when the environment is reset.
   game_mode_t getMode() const { return environment->getMode(); }
+
+  // Number of players active in the current game mode
+  // also the, number of actions expected by act
+  int numPlayersActive();
 
   //Returns the vector of difficulties available for the current game.
   //This should be called only after the rom is loaded. Notice
@@ -143,8 +154,11 @@ class ALEInterface {
   // Returns the frame number since the loading of the ROM
   int getFrameNumber() const;
 
-  // The remaining number of lives.
+  // The remaining number of lives for player 1.
   int lives();
+
+  // lives for all players
+  std::vector<int> allLives();
 
   // Returns the frame number since the start of the current episode
   int getEpisodeFrameNumber() const;
