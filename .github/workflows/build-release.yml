@@ -136,11 +136,6 @@ jobs:
           ./vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_ENV
 
-      - name: Install vcpkg dependencies
-        run: |
-          $VCPKG_ROOT/vcpkg install zlib:wasm32-emscripten \
-            --overlay-triplets=cmake/custom-triplets
-
       - name: Download and unpack ROMs
         run: ./scripts/download_unpack_roms.sh
 
