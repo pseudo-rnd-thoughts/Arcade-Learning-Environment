@@ -152,33 +152,18 @@ def test_xla_dispatch_gpu():
     handle, xla_reset, xla_step = envs.xla()
 
     print(f"GPU_DEVICES={GPU_DEVICES}, CPU_DEVICES={CPU_DEVICES}")
-    if GPU_DEVICES:
-        print("RUNNING ON GPUs")
-        handle, (obs, info) = xla_reset(handle)
-        assert is_gpu_array(obs)
-        assert is_gpu_array(info["frame_number"])
+    check_fn = is_gpu_array if GPU_DEVICES else is_cpu_array
 
-        actions = np.zeros(1, dtype=np.int32)
-        handle, (obs, rewards, terminations, truncations, info) = xla_step(
-            handle, actions
-        )
-        assert is_gpu_array(obs)
-        assert is_gpu_array(rewards)
-        assert is_gpu_array(terminations)
-        assert is_gpu_array(truncations)
-        assert is_gpu_array(info["frame_number"])
-    else:
-        print("RUNNING ON CPUs")
-        handle, (obs, info) = xla_reset(handle)
-        assert is_cpu_array(obs)
-        assert is_cpu_array(info["frame_number"])
+    handle, (obs, info) = xla_reset(handle)
+    assert check_fn(obs)
+    assert check_fn(info["frame_number"])
 
-        actions = np.zeros(1, dtype=np.int32)
-        handle, (obs, rewards, terminations, truncations, info) = xla_step(
-            handle, actions
-        )
-        assert is_cpu_array(obs)
-        assert is_cpu_array(rewards)
-        assert is_cpu_array(terminations)
-        assert is_cpu_array(truncations)
-        assert is_cpu_array(info["frame_number"])
+    actions = np.zeros(1, dtype=np.int32)
+    handle, (obs, rewards, terminations, truncations, info) = xla_step(
+        handle, actions
+    )
+    assert check_fn(obs)
+    assert check_fn(rewards)
+    assert check_fn(terminations)
+    assert check_fn(truncations)
+    assert check_fn(info["frame_number"])

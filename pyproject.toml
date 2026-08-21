@@ -2,7 +2,15 @@
 requires = [
     "scikit-build-core>=0.10",
     "nanobind>=2.5.0",
-    "jax >= 0.4.31"
+    # The XLA FFI handler API version is baked into the compiled extension by the jax
+    # headers used here, and an older jax runtime refuses to load a handler newer than
+    # its own framework API. The runtime floors in the `xla`/`test` extras must
+    # therefore match whatever jax is installed at build time, which jax's own
+    # requires-python caps per Python version:
+    #   py3.10 -> jax 0.6.2 (FFI 0.1), py3.11 -> 0.10.2 (FFI 0.3), py3.12+ -> 0.11.1 (FFI 0.4)
+    "jax >= 0.11.1 ; python_version >= '3.12'",
+    "jax >= 0.10.0 ; python_version == '3.11'",
+    "jax >= 0.5.3 ; python_version < '3.11'",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -50,14 +58,20 @@ vector = [
 xla = [
     "gymnasium>=1.1.0",
     "opencv-python>=3.0",
-    "jax >= 0.4.31",
+    # Must match the build-time jax floors in [build-system] above
+    "jax >= 0.11.1 ; python_version >= '3.12'",
+    "jax >= 0.10.0 ; python_version == '3.11'",
+    "jax >= 0.5.3 ; python_version < '3.11'",
     "chex",
 ]
 test = [
     "pytest>=7.0",
     "gymnasium>=1.1.0",
     "opencv-python>=3.0",
-    "jax >= 0.4.31",
+    # Must match the build-time jax floors in [build-system] above
+    "jax >= 0.11.1 ; python_version >= '3.12'",
+    "jax >= 0.10.0 ; python_version == '3.11'",
+    "jax >= 0.5.3 ; python_version < '3.11'",
     "chex"
 ]
 

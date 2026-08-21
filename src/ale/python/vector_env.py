@@ -342,7 +342,11 @@ class AtariVectorEnv(VectorEnv):
             chex.assert_shape(reset_seeds, (len(reset_indices),))
 
             new_handle, obs, env_ids, lives, frame_numbers, episode_frame_numbers = (
-                xla_call(handle, reset_indices, reset_seeds)
+                # The optimization barrier stops XLA's dynamic-slice-fusion rewriter
+                # from cloning this side-effecting call into a fusion (see xla_step).
+                jax.lax.optimization_barrier(
+                    xla_call(handle, reset_indices, reset_seeds)
+                )
             )
 
             info = {
@@ -412,6 +416,12 @@ class AtariVectorEnv(VectorEnv):
                 has_side_effect=True,
             )
 
+            # XLA's `dynamic-slice-fusion-rewriter-v2` pass (GPU backend) clones a custom
+            # call whose results feed a dynamic-update-slice into a fusion, but cannot
+            # delete the original because it is side-effecting. Inside a `lax.scan` that
+            # writes the per-step outputs into the stacked `ys`, that makes every
+            # iteration step the emulator twice. The optimization barrier breaks the
+            # pattern the rewriter matches on.
             (
                 new_handle,
                 obs,
@@ -422,7 +432,9 @@ class AtariVectorEnv(VectorEnv):
                 lives,
                 frame_numbers,
                 episode_frame_numbers,
-            ) = xla_call(handle, action_ids, paddle_strength)
+            ) = jax.lax.optimization_barrier(
+                xla_call(handle, action_ids, paddle_strength)
+            )
 
             info = {
                 "env_id": env_ids,
